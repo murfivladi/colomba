@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { GAME } from '@colomba/shared';
 import { config } from '../config.js';
 import { exec, one, q } from '../db.js';
 import { requireActiveUser, requireUser } from '../lib/auth.js';
@@ -89,7 +90,7 @@ async function letterView(l: any, viewerId: number) {
     postmarks: postmarks.map((p) => ({ ru: p.name_ru, it: p.name_it, country: p.country, at: p.stamped_at, pos: [p.lon, p.lat] })),
     // ответить можно тем же курьером, пока он ждёт у получателя
     canReplyWithCourier: isRecipient && delivered && !!courier && courier.status === 'waiting' && courier.owner_id === l.from_id,
-    recallableUntil: isSender && l.status === 'in_transit' && l.sent_at ? new Date(new Date(l.sent_at).getTime() + 5 * 60_000) : null,
+    recallableUntil: isSender && l.status === 'in_transit' && l.sent_at ? new Date(new Date(l.sent_at).getTime() + GAME.recallWindowMin * 60_000) : null,
   };
 }
 

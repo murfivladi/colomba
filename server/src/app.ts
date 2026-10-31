@@ -7,6 +7,7 @@ import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
 import { config } from './config.js';
 import { loadUser } from './lib/auth.js';
+import { loadRuntime } from './services/runtime.js';
 import { HttpError } from './lib/errors.js';
 import { authRoutes } from './routes/auth.js';
 import { meRoutes } from './routes/me.js';
@@ -17,6 +18,8 @@ import { worldRoutes } from './routes/world.js';
 import { adminRoutes } from './routes/admin.js';
 
 export async function buildApp(opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
+  // настройки из админки (SMTP, ключи API, игровые параметры) — до первого запроса
+  await loadRuntime();
   // бэкенд на https://colomba-api.vladinc.ru:5576 сам терминирует TLS сертификатом Let's Encrypt
   const https = config.tlsCertFile && config.tlsKeyFile
     ? { https: { cert: fs.readFileSync(config.tlsCertFile), key: fs.readFileSync(config.tlsKeyFile) } }

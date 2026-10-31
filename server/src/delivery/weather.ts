@@ -1,5 +1,5 @@
 import { bearingDeg, pointAlong, lineLengthKm, type LonLat } from '@colomba/shared';
-import { config } from '../config.js';
+import { rt } from '../services/runtime.js';
 import { exec, q } from '../db.js';
 import { countUsage } from '../lib/usage.js';
 
@@ -21,7 +21,7 @@ const cellOf = (p: LonLat) => `${Math.round(p[1])},${Math.round(p[0])}`;
  * Если сервис недоступен — нейтральная погода (без ускорения и замедления).
  */
 export async function weatherAlong(line: LonLat[], samples = 8): Promise<WeatherSample[]> {
-  if (!config.weatherEnabled || line.length < 2) return [];
+  if (!rt.weatherEnabled() || line.length < 2) return [];
   const total = lineLengthKm(line);
   const n = Math.max(1, Math.min(samples, Math.ceil(total / 150)));
   const pts: { pos: LonLat; at: number; cell: string }[] = [];

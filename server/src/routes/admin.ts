@@ -2,9 +2,12 @@ import fs from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
+import { describeSettings, rt, saveSettings } from '../services/runtime.js';
+import { mailConfigured, testMail } from '../lib/mail.js';
+import { countUsage } from '../lib/usage.js';
 import { exec, one, q } from '../db.js';
 import { requireAdmin } from '../lib/auth.js';
-import { notFound } from '../lib/errors.js';
+import { bad, notFound } from '../lib/errors.js';
 import { ensurePostmaster } from '../services/accounts.js';
 import { invalidateCatalog, rowToCourierType } from '../services/catalog.js';
 import { notify } from '../services/notify.js';
@@ -189,7 +192,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const b = z.object({ uses: z.number().int().min(1).max(1000).default(1), note: z.string().max(255).optional() }).parse(req.body ?? {});
     const code = Math.random().toString(36).slice(2, 10);
     await exec('INSERT INTO invites (code, created_by, uses_left, note) VALUES (?, ?, ?, ?)', [code, admin.id, b.uses, b.note ?? null]);
-    return { code, link: `${config.publicUrl}/#/register?invite=${code}` };
+    return { code, link: `${rt.publicUrl()}/#/register?invite=${code}` };
   });
 
   // ─── Статистика (без внешней аналитики — только своя база) ───
@@ -217,6 +220,56 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       mediaBytes: Number(media?.n ?? 0),
       disk,
     };
+  });
+
+  // ─── Настройки без перезапуска: почта, ключи API, доступ, игровые параметры ───
+  app.get('/settings', async () => ({ items: describeSettings(), mailConfigured: mailConfigured() }));
+
+  app.put('/settings', async (req) => {
+    const b = z.object({ values: z.record(z.string(), z.unknown()) }).parse(req.body);
+    await saveSettings(b.values);
+    return { items: describeSettings(), mailConfigured: mailConfigured() };
+  });
+
+  app.post('/settings/test-mail', async (req) => {
+    const admin = requireAdmin(req);
+    const b = z.object({ to: z.string().email().optional() }).parse(req.body ?? {});
+    const to = b.to ?? admin.email;
+    if (!to) throw bad('email_required');
+    try {
+      await testMail(to);
+      return { ok: true, to };
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e).slice(0, 300) };
+    }
+  });
+
+  /** Проверка ключей: короткий маршрут Рим → Неаполь и погода в Риме. */
+  app.post('/settings/test-apis', async () => {
+    const a = [12.4964, 41.9028], b = [14.2681, 40.8518];
+    const check = async (name: string, fn: () => Promise<Response | null>) => {
+      try {
+        const r = await fn();
+        if (!r) return { name, ok: false, error: 'no_key' };
+        await countUsage(name, r.ok);
+        return { name, ok: r.ok, status: r.status, error: r.ok ? undefined : (await r.text()).slice(0, 200) };
+      } catch (e: any) {
+        return { name, ok: false, error: String(e?.message ?? e).slice(0, 200) };
+      }
+    };
+    return [
+      await check('ors', async () => rt.orsApiKey() ? fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
+        method: 'POST', headers: { Authorization: rt.orsApiKey(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coordinates: [a, b] }), signal: AbortSignal.timeout(15000),
+      }) : null),
+      await check('graphhopper', async () => rt.graphhopperKey() ? fetch(
+        `https://graphhopper.com/api/1/route?point=${a[1]},${a[0]}&point=${b[1]},${b[0]}&profile=car&calc_points=false&key=${encodeURIComponent(rt.graphhopperKey())}`,
+        { signal: AbortSignal.timeout(15000) },
+      ) : null),
+      await check('open-meteo', async () => fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${a[1]}&longitude=${a[0]}&current=wind_speed_10m`, { signal: AbortSignal.timeout(15000) },
+      )),
+    ];
   });
 
   // ─── Рассылки от почтмейстера: прилетают как обычное письмо ───

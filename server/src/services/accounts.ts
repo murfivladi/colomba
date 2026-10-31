@@ -1,4 +1,4 @@
-import type { Lang } from '@colomba/shared';
+import { GAME, type Lang } from '@colomba/shared';
 import { exec, one, pointWkt, tx } from '../db.js';
 import { newInviteCode } from '../lib/auth.js';
 import { conflict } from '../lib/errors.js';
@@ -77,12 +77,12 @@ export async function createAccount(a: NewAccount): Promise<number> {
   const id = await tx(async (c) => {
     const res = await exec(
       `INSERT INTO users (email, password_hash, username, display_name, lang, birth_date, kind, parent_id, role, invite_code, timezone,
-         who_can_write, penpal_enabled, bottle_enabled, location_precision)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         who_can_write, penpal_enabled, bottle_enabled, location_precision, slots)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         a.email, a.passwordHash, a.username, a.displayName, a.lang, a.birthDate, a.kind, a.parentId ?? null, a.role ?? 'user',
         newInviteCode(), a.timezone ?? (a.lang === 'it' ? 'Europe/Rome' : 'Europe/Moscow'),
-        a.kind === 'child' ? 'friends' : 'friends_penpals', 0, a.kind === 'child' ? 0 : 1, 'city',
+        a.kind === 'child' ? 'friends' : 'friends_penpals', 0, a.kind === 'child' ? 0 : 1, 'city', GAME.startSlots,
       ],
       c,
     );

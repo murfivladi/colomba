@@ -1,8 +1,11 @@
 import webpush from 'web-push';
 import { config } from '../config.js';
+import { onRuntimeChange, rt } from './runtime.js';
 import { exec, one, q } from '../db.js';
 
 let ready: Promise<string | null> | null = null;
+// сменили контакт VAPID в админке — переинициализируем при следующей отправке
+onRuntimeChange(() => { ready = null; });
 
 /** VAPID-ключи: из переменных окружения или сгенерированные один раз и сохранённые в settings. */
 export function vapidPublicKey(): Promise<string | null> {
@@ -26,7 +29,7 @@ async function init(): Promise<string | null> {
       await exec("INSERT INTO settings (k, v) VALUES ('vapid', ?)", [JSON.stringify(keys)]);
     }
   }
-  webpush.setVapidDetails(config.vapidSubject, pub, priv);
+  webpush.setVapidDetails(rt.vapidSubject(), pub, priv);
   return pub;
 }
 

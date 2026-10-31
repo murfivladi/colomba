@@ -8,6 +8,7 @@ import {
 import { z } from 'zod';
 import { GAME } from '@colomba/shared';
 import { config } from '../config.js';
+import { rt } from '../services/runtime.js';
 import { exec, one, q } from '../db.js';
 import {
   ageYears, createSession, destroySession, hashPassword, randomToken, requireUser, sha256, verifyPassword,
@@ -19,10 +20,10 @@ import { createAccount } from '../services/accounts.js';
 const USERNAME = z.string().regex(/^[a-zA-Z0-9_.]{3,32}$/);
 const LANG = z.enum(['ru', 'it']);
 
-const origin = () => new URL(config.publicUrl).origin;
+const origin = () => new URL(rt.publicUrl()).origin;
 
 async function consumeInvite(code: string | undefined): Promise<void> {
-  if (!config.inviteOnly) return;
+  if (!rt.inviteOnly()) return;
   if (!code) throw forbidden('invite_required');
   // приглашение — личная ссылка пользователя или код, выданный администратором
   const personal = await one('SELECT id FROM users WHERE invite_code = ? AND deleted_at IS NULL', [code]);
@@ -58,7 +59,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       lang: b.lang,
       birthDate: b.birthDate,
       kind: 'adult',
-      role: config.adminEmails.includes(email) ? 'admin' : 'user',
+      role: rt.adminEmails().includes(email) ? 'admin' : 'user',
       timezone: b.timezone,
     });
     // приглашение по личной ссылке сразу делает друзьями
@@ -99,7 +100,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       `INSERT INTO login_codes (email, user_id, code_hash, token_hash, expires_at) VALUES (?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 15 MINUTE))`,
       [email, u.id, sha256(code), sha256(token)],
     );
-    const link = `${config.publicUrl}/#/login?token=${token}`;
+    const link = `${rt.publicUrl()}/#/login?token=${token}`;
     const ru = `Ваш код для входа в Colomba: ${code}\n\nИли откройте ссылку: ${link}\n\nКод действует 15 минут.`;
     const it = `Il tuo codice per entrare in Colomba: ${code}\n\nOppure apri il link: ${link}\n\nIl codice è valido 15 minuti.`;
     await sendMail(email, u.lang === 'it' ? 'Colomba: codice di accesso' : 'Colomba: код для входа', u.lang === 'it' ? it : ru);
@@ -226,7 +227,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return { id: pk.user_id };
   });
 
-  app.get('/config', async () => ({ inviteOnly: config.inviteOnly, childAgeLimit: GAME.childAgeLimit }));
+  app.get('/config', async () => ({ inviteOnly: rt.inviteOnly(), childAgeLimit: GAME.childAgeLimit }));
 
   void conflict;
 }

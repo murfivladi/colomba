@@ -5,8 +5,9 @@ import { CourierArt } from '../art/Couriers';
 import { ErrorText, Loading, Modal, useLoad } from '../components/ui';
 import { formatDate, useT } from '../i18n';
 import { useSession } from '../state';
+import { AdminSettings } from './AdminSettings';
 
-type Tab = 'reports' | 'stats' | 'couriers' | 'catalog' | 'broadcasts' | 'invites' | 'users';
+type Tab = 'reports' | 'stats' | 'couriers' | 'catalog' | 'broadcasts' | 'invites' | 'users' | 'settings';
 
 /** Админ-панель: курьеры и события, жалобы и баны, статистика, рассылки. */
 export function Admin() {
@@ -16,7 +17,7 @@ export function Admin() {
   if (me.role !== 'admin') return <p className="error">403</p>;
   const tabs: [Tab, string][] = [
     ['reports', t('admin.reports')], ['stats', t('admin.stats')], ['couriers', t('admin.couriers')], ['catalog', 'Items · Events · Achievements'],
-    ['broadcasts', t('admin.broadcasts')], ['invites', t('admin.invites')], ['users', t('admin.users')],
+    ['broadcasts', t('admin.broadcasts')], ['invites', t('admin.invites')], ['users', t('admin.users')], ['settings', t('admin.settings')],
   ];
   return (
     <div>
@@ -29,6 +30,7 @@ export function Admin() {
       {tab === 'broadcasts' && <Broadcasts />}
       {tab === 'invites' && <Invites />}
       {tab === 'users' && <Users />}
+      {tab === 'settings' && <AdminSettings />}
     </div>
   );
 }

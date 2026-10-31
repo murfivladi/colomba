@@ -1,5 +1,5 @@
 import { greatCircle, gridCell, haversineKm, lineLengthKm, type LonLat } from '@colomba/shared';
-import { config } from '../config.js';
+import { rt } from '../services/runtime.js';
 import { exec, one } from '../db.js';
 import { countUsage } from '../lib/usage.js';
 import { sameLandmass } from './landmass.js';
@@ -24,11 +24,12 @@ export function simplify(line: LonLat[], maxPts = 600): LonLat[] {
 }
 
 async function orsRoute(a: LonLat, b: LonLat): Promise<LonLat[] | null> {
-  if (!config.orsApiKey) return null;
+  const key = rt.orsApiKey();
+  if (!key) return null;
   try {
     const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
       method: 'POST',
-      headers: { Authorization: config.orsApiKey, 'Content-Type': 'application/json' },
+      headers: { Authorization: key, 'Content-Type': 'application/json' },
       body: JSON.stringify({ coordinates: [a, b], radiuses: [-1, -1], instructions: false }),
       signal: AbortSignal.timeout(20000),
     });
@@ -44,7 +45,8 @@ async function orsRoute(a: LonLat, b: LonLat): Promise<LonLat[] | null> {
 }
 
 async function graphhopperRoute(a: LonLat, b: LonLat): Promise<LonLat[] | null> {
-  if (!config.graphhopperKey) return null;
+  const key = rt.graphhopperKey();
+  if (!key) return null;
   try {
     const url = new URL('https://graphhopper.com/api/1/route');
     url.searchParams.append('point', `${a[1]},${a[0]}`);
@@ -52,7 +54,7 @@ async function graphhopperRoute(a: LonLat, b: LonLat): Promise<LonLat[] | null> 
     url.searchParams.set('profile', 'car');
     url.searchParams.set('points_encoded', 'false');
     url.searchParams.set('instructions', 'false');
-    url.searchParams.set('key', config.graphhopperKey);
+    url.searchParams.set('key', key);
     const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
     await countUsage('graphhopper', res.ok);
     if (!res.ok) return null;

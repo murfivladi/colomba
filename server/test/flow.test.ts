@@ -346,3 +346,51 @@ describe('shop and couriers', () => {
 });
 
 const ROME_PT: [number, number] = [12.48, 41.89];
+
+describe('runtime settings in admin', () => {
+  it('stores secrets encrypted and masked, applies values without restart', async () => {
+    const login = await call(null, 'POST', '/auth/login', { email: 'admin@example.com', password: 'password123' });
+    const admin = { cookie: String(login.res.headers['set-cookie']).split(';')[0], id: 0 };
+    const user = await register('plainuser', PALERMO);
+    expect((await call(user, 'GET', '/admin/settings')).status).toBe(403);
+
+    const before = (await call(admin, 'GET', '/admin/settings')).body.items;
+    expect(before.find((i: any) => i.key === 'smtpPass')).toMatchObject({ kind: 'secret', isSet: false });
+    expect(before.find((i: any) => i.key === 'game.waitDays').value).toBe(7);
+
+    const r = await call(admin, 'PUT', '/admin/settings', { values: {
+      smtpHost: 'smtp.example.com', smtpUser: 'colomba', smtpPass: 'super-secret-1234', orsApiKey: 'ors-key-abcd',
+      inviteOnly: true, adminEmails: 'boss@example.com, Admin@example.com', 'game.recallWindowMin': 0,
+    } });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const pass = r.body.items.find((i: any) => i.key === 'smtpPass');
+    expect(pass).toMatchObject({ isSet: true, value: '••••1234', source: 'admin' });
+    expect(r.body.mailConfigured).toBe(true);
+    expect(JSON.stringify(r.body)).not.toContain('super-secret');
+    const raw = await one<any>("SELECT v FROM settings WHERE k = 'runtime'");
+    expect(JSON.stringify(raw.v)).not.toContain('super-secret');
+    expect(r.body.items.find((i: any) => i.key === 'adminEmails').value).toEqual(['boss@example.com', 'admin@example.com']);
+
+    // пустой секрет не затирает сохранённый
+    await call(admin, 'PUT', '/admin/settings', { values: { smtpPass: '' } });
+    expect((await call(admin, 'GET', '/admin/settings')).body.items.find((i: any) => i.key === 'smtpPass').isSet).toBe(true);
+
+    // настройки действуют сразу: закрытая регистрация и окно отзыва 0 минут
+    expect((await call(null, 'GET', '/auth/config')).body.inviteOnly).toBe(true);
+    const reg = await call(null, 'POST', '/auth/register', {
+      email: 'late@example.com', password: 'password123', username: 'late', displayName: 'Late', lang: 'ru', birthDate: '1990-01-01', acceptTerms: true,
+    });
+    expect(reg.body.error).toBe('invite_required');
+
+    expect((await call(admin, 'PUT', '/admin/settings', { values: { 'game.lossChance': 5 } })).status).toBe(400);
+    expect((await call(admin, 'PUT', '/admin/settings', { values: { nope: 1 } })).status).toBe(400);
+
+    // сброс к .env
+    const keys = ['smtpHost', 'smtpUser', 'smtpPass', 'orsApiKey', 'inviteOnly', 'adminEmails', 'game.recallWindowMin'];
+    await call(admin, 'PUT', '/admin/settings', { values: Object.fromEntries(keys.map((k) => [k, null])) });
+    const after = (await call(admin, 'GET', '/admin/settings')).body;
+    expect(after.items.find((i: any) => i.key === 'inviteOnly')).toMatchObject({ value: false, source: 'env' });
+    expect(after.items.find((i: any) => i.key === 'smtpPass').isSet).toBe(false);
+    expect(after.mailConfigured).toBe(false);
+  });
+});
