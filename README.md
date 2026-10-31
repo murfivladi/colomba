@@ -66,7 +66,7 @@ Workflow `.github/workflows/deploy.yml` запускается при пуше �
    - выпускает сертификат для `colomba-api.vladinc.ru` через `certbot --standalone`. **На время выдачи nginx останавливается и затем запускается обратно** (хуки `deploy/certbot-pre.sh` и `certbot-post.sh`). Если nginx не работал до этого, он не запускается. Хуки сохраняются в конфиге продления certbot, поэтому автопродление ведёт себя так же. Если сертификату ещё далеко до истечения, certbot ничего не делает и nginx не трогается;
    - копирует сертификат бэкенду (`/opt/colomba/certs`, хук `certbot-deploy.sh`; после продления он же перезапускает контейнер `colomba-api`);
    - выполняет `docker compose up -d --build` и ждёт, пока ответит `/api/health`.
-3. **Фронт и прокси.** Сборка PWA (API — относительный адрес `/colomba/api`), генерация `api/config.php` с адресом бэкенда и `PROXY_SECRET` (в репозитории его нет, отдавать его запрещено `.htaccess`), выгрузка `web/dist/` по FTP и проверка `https://vladinc.ru/colomba/api/health` через прокси.
+3. **Фронт и прокси.** Сборка PWA в GitHub Actions (API — относительный адрес `/colomba/api`) и генерация `api/config.php` с адресом бэкенда и `PROXY_SECRET` (в репозитории его нет, отдавать его запрещено `.htaccess`). Архив сборки уходит **на VPS**, и уже VPS заливает его на хостинг по FTP (`deploy/remote-frontend.sh`, `lftp`): сначала ассеты, в конце `index.html`, `sw.js`, манифест и `.htaccess`, чтобы браузер не получил новую страницу раньше её файлов. Старые файлы с хешами не удаляются — они ещё нужны открытым вкладкам. Затем VPS проверяет `https://vladinc.ru/colomba/api/health` и `auth/config` через прокси.
 
 ### Настройки в админке
 Всё, что не нужно для запуска, меняется в **Админ-панель → Настройки** без перезапуска и без деплоя:
@@ -81,7 +81,8 @@ Workflow `.github/workflows/deploy.yml` запускается при пуше �
 | Секрет | Обязателен | Что это |
 |---|---|---|
 | `VPS_IP`, `VPS_USER` (`root`), `VPS_PASS` | да | SSH-доступ к VPS |
-| `FTP_HOST`, `FTP_USER`, `FTP_PASS` | да | FTP shared-хостинга |
+| `FTP_HOST`, `FTP_USER`, `FTP_PASS` | да | FTP shared-хостинга; подключается VPS, а не GitHub. FTPS используется, если хостинг его поддерживает |
+| `FTP_PORT` | нет | порт FTP, по умолчанию 21 |
 | `PROXY_SECRET` | да | общий секрет PHP-прокси и бэкенда, не короче 24 символов: `openssl rand -hex 32` |
 | `FTP_DIR` | нет | каталог приложения на FTP, по умолчанию `/colomba/` (например, `/public_html/colomba/`) |
 | `CERTBOT_EMAIL` | нет | почта для уведомлений Let's Encrypt |
