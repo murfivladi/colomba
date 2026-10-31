@@ -71,10 +71,12 @@ set_kv() {
 set_kv PUBLIC_URL "${PUBLIC_URL:-https://vladinc.ru/colomba}"
 set_kv API_PREFIX /api
 set_kv COOKIE_SECURE true
-set_kv COOKIE_PATH /
+set_kv COOKIE_PATH /colomba
 set_kv CORS_ORIGINS "${CORS_ORIGINS:-https://vladinc.ru,https://www.vladinc.ru}"
 set_kv WEBAUTHN_RP_ID "${WEBAUTHN_RP_ID:-vladinc.ru}"
 set_kv INVITE_ONLY "${INVITE_ONLY:-true}"
+# общий секрет с PHP-прокси на хостинге: без него бэкенд отвечает 403 (кроме /api/health)
+[ -n "${PROXY_SECRET:-}" ] && set_kv PROXY_SECRET "$PROXY_SECRET"
 set_kv DEV_LOG_CODES false
 set_kv WEATHER_ENABLED true
 # необязательные секреты: пишем, только если заданы

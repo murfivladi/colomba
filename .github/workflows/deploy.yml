@@ -1,12 +1,15 @@
 name: Deploy
 
 # Тесты → бэкенд на VPS (Docker, HTTPS прямо в бэкенде на :5576, сертификат certbot)
-# → фронт (PWA) на shared-хостинг по FTP.
+# → фронт (PWA) и PHP-прокси API на shared-хостинг по FTP.
+# Браузер ходит только на vladinc.ru/colomba/api — PHP-прокси пересылает запросы на бэкенд,
+# а бэкенд принимает их только с общим секретом PROXY_SECRET.
 #
 # Секреты (Settings → Secrets and variables → Actions):
 #   VPS_IP, VPS_USER, VPS_PASS          — доступ к VPS по SSH (пароль)
 #   FTP_HOST, FTP_USER, FTP_PASS         — FTP shared-хостинга
 #   FTP_DIR        (необязательно)       — каталог сайта на FTP, по умолчанию /colomba/
+#   PROXY_SECRET                         — общий секрет PHP-прокси и бэкенда (длинная случайная строка)
 #   CERTBOT_EMAIL  (необязательно)       — почта для Let's Encrypt
 #   ORS_API_KEY, GRAPHHOPPER_API_KEY, SMTP_URL, MAIL_FROM, ADMIN_EMAILS (необязательно)
 
@@ -53,6 +56,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check required secrets
+        env:
+          PROXY_SECRET: ${{ secrets.PROXY_SECRET }}
+        run: |
+          if [ ${#PROXY_SECRET} -lt 24 ]; then
+            echo "::error::Задайте секрет PROXY_SECRET (не короче 24 символов), например: openssl rand -hex 32"
+            exit 1
+          fi
+
       - name: Pack release
         run: |
           mkdir -p release
@@ -78,6 +90,7 @@ jobs:
           CORS_ORIGINS: https://vladinc.ru,https://www.vladinc.ru
           WEBAUTHN_RP_ID: vladinc.ru
           INVITE_ONLY: 'true'
+          PROXY_SECRET: ${{ secrets.PROXY_SECRET }}
           CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
           GRAPHHOPPER_API_KEY: ${{ secrets.GRAPHHOPPER_API_KEY }}
@@ -89,7 +102,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASS }}
           command_timeout: 30m
-          envs: DOMAIN,API_PORT,PUBLIC_URL,CORS_ORIGINS,WEBAUTHN_RP_ID,INVITE_ONLY,CERTBOT_EMAIL,ORS_API_KEY,GRAPHHOPPER_API_KEY,SMTP_URL,MAIL_FROM,ADMIN_EMAILS
+          envs: DOMAIN,API_PORT,PUBLIC_URL,CORS_ORIGINS,WEBAUTHN_RP_ID,INVITE_ONLY,PROXY_SECRET,CERTBOT_EMAIL,ORS_API_KEY,GRAPHHOPPER_API_KEY,SMTP_URL,MAIL_FROM,ADMIN_EMAILS
           script: BUNDLE=/tmp/colomba-deploy/colomba-deploy.tar.gz bash /tmp/colomba-deploy/remote-deploy.sh
 
       - name: Check API from the internet
@@ -112,12 +125,18 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - name: Build PWA
+      - name: Build PWA + PHP proxy
         env:
-          VITE_API_URL: https://${{ env.API_DOMAIN }}:${{ env.API_PORT }}/api
+          PROXY_SECRET: ${{ secrets.PROXY_SECRET }}
         run: |
+          # API — тот же адрес, что и сайт: /colomba/api (PHP-прокси)
           npm run build -w web
           cp deploy/.htaccess web/dist/.htaccess
+          # настройки прокси: адрес бэкенда и общий секрет (файл не попадает в репозиторий)
+          php -r '$c = ["backend" => "https://" . getenv("API_DOMAIN") . ":" . getenv("API_PORT"), "secret" => getenv("PROXY_SECRET")];
+                  file_put_contents("web/dist/api/config.php", "<?php\nreturn " . var_export($c, true) . ";\n");'
+          php -l web/dist/api/config.php
+          php -l web/dist/api/index.php
 
       - name: Upload by FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -127,3 +146,15 @@ jobs:
           password: ${{ secrets.FTP_PASS }}
           local-dir: ./web/dist/
           server-dir: ${{ secrets.FTP_DIR || '/colomba/' }}
+
+      - name: Check API through the PHP proxy
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS "${PUBLIC_URL}/api/health" | grep -q '"ok":true'; then
+              curl -s -o /dev/null -w "auth/config: %{http_code}\n" "${PUBLIC_URL}/api/auth/config"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::PHP-прокси ${PUBLIC_URL}/api не отвечает (нужен PHP с расширением curl)"
+          exit 1

@@ -54,7 +54,9 @@ npm test
 
 ## Развёртывание (GitHub Actions)
 
-Схема: фронт (PWA) — на shared-хостинге `vladinc.ru/colomba` по FTP; бэкенд, MariaDB и файлы — в Docker на VPS. API доступно по адресу **https://colomba-api.vladinc.ru:5576**, HTTPS бэкенд обслуживает сам, сертификатом Let's Encrypt.
+Схема: фронт (PWA) — на shared-хостинге `vladinc.ru/colomba` по FTP; бэкенд, MariaDB и файлы — в Docker на VPS (`https://colomba-api.vladinc.ru:5576`, HTTPS бэкенд обслуживает сам, сертификатом Let's Encrypt).
+
+**Браузер обращается только к `vladinc.ru/colomba/api`.** Там лежит PHP-прокси (`web/public/api/index.php`), который пересылает запросы на бэкенд: метод, тело (включая загрузку фото и голоса), cookie сессии, ответ — потоком (файлы и уведомления SSE без буферизации). Бэкенд принимает запросы только с общим секретом `PROXY_SECRET` (заголовок `X-Colomba-Proxy`), кроме `/api/health`, — в обход прокси к API не обратиться. На хостинге нужен PHP 7.4+ с расширением `curl`.
 
 Workflow `.github/workflows/deploy.yml` запускается при пуше в `main` или вручную (Actions → Deploy → Run workflow). Порядок шагов:
 1. Тесты и проверка типов.
@@ -64,7 +66,7 @@ Workflow `.github/workflows/deploy.yml` запускается при пуше �
    - выпускает сертификат для `colomba-api.vladinc.ru` через `certbot --standalone`. **На время выдачи nginx останавливается и затем запускается обратно** (хуки `deploy/certbot-pre.sh` и `certbot-post.sh`). Если nginx не работал до этого, он не запускается. Хуки сохраняются в конфиге продления certbot, поэтому автопродление ведёт себя так же. Если сертификату ещё далеко до истечения, certbot ничего не делает и nginx не трогается;
    - копирует сертификат бэкенду (`/opt/colomba/certs`, хук `certbot-deploy.sh`; после продления он же перезапускает контейнер `colomba-api`);
    - выполняет `docker compose up -d --build` и ждёт, пока ответит `/api/health`.
-3. **Фронт.** Сборка с `VITE_API_URL=https://colomba-api.vladinc.ru:5576/api`, затем выгрузка `web/dist/` вместе с `.htaccess` по FTP.
+3. **Фронт и прокси.** Сборка PWA (API — относительный адрес `/colomba/api`), генерация `api/config.php` с адресом бэкенда и `PROXY_SECRET` (в репозитории его нет, отдавать его запрещено `.htaccess`), выгрузка `web/dist/` по FTP и проверка `https://vladinc.ru/colomba/api/health` через прокси.
 
 ### Настройки в админке
 Всё, что не нужно для запуска, меняется в **Админ-панель → Настройки** без перезапуска и без деплоя:
@@ -80,6 +82,7 @@ Workflow `.github/workflows/deploy.yml` запускается при пуше �
 |---|---|---|
 | `VPS_IP`, `VPS_USER` (`root`), `VPS_PASS` | да | SSH-доступ к VPS |
 | `FTP_HOST`, `FTP_USER`, `FTP_PASS` | да | FTP shared-хостинга |
+| `PROXY_SECRET` | да | общий секрет PHP-прокси и бэкенда, не короче 24 символов: `openssl rand -hex 32` |
 | `FTP_DIR` | нет | каталог приложения на FTP, по умолчанию `/colomba/` (например, `/public_html/colomba/`) |
 | `CERTBOT_EMAIL` | нет | почта для уведомлений Let's Encrypt |
 | `ADMIN_EMAILS` | для первого входа | почта первого администратора; остальное (SMTP, ключи API) удобнее задать потом в админке |
@@ -88,7 +91,7 @@ Workflow `.github/workflows/deploy.yml` запускается при пуше �
 ### Что должно быть готово заранее
 - DNS: A-запись `colomba-api.vladinc.ru` указывает на IP VPS.
 - Порты 80 (только на время выдачи сертификата) и 5576 открыты. Если на VPS включён `ufw`, скрипт откроет их сам; облачный файрвол провайдера нужно настроить вручную.
-- Для cookie ничего настраивать не нужно: `vladinc.ru` и `colomba-api.vladinc.ru` — один «сайт», cookie сессии (`Secure; SameSite=Lax`) доходит, CORS разрешён только для `https://vladinc.ru` и `https://www.vladinc.ru`.
+- Cookie сессии ставится для `vladinc.ru` с путём `/colomba` (через прокси сайт и API — один адрес), CORS не нужен.
 
 ### Потом
 - Полная база городов для штемпелей: на VPS `cd /opt/colomba/app && docker compose -p colomba exec api ...` либо локально `deploy/import-geonames.sh` с доступом к базе. Без неё работает стартовый набор из ~170 городов.

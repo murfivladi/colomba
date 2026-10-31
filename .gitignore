@@ -5,3 +5,5 @@ dist/
 server/media/
 coverage/
 .DS_Store
+# настройки PHP-прокси с секретом создаёт деплой
+web/public/api/config.php

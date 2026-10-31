@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
@@ -44,7 +45,14 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   await app.register(multipart, { limits: { fileSize: config.maxUploadMb * 1024 * 1024, files: 1 } });
 
   app.decorateRequest('user', null);
-  app.addHook('onRequest', async (req) => {
+  const secret = config.proxySecret ? Buffer.from(config.proxySecret) : null;
+  app.addHook('onRequest', async (req, reply) => {
+    if (secret && !req.url.startsWith(`${config.apiPrefix}/health`)) {
+      const got = Buffer.from(String(req.headers['x-colomba-proxy'] ?? ''));
+      if (got.length !== secret.length || !crypto.timingSafeEqual(got, secret)) {
+        return reply.status(403).send({ error: 'proxy_required' });
+      }
+    }
     req.user = await loadUser(req);
   });
 

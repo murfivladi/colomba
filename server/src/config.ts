@@ -54,6 +54,11 @@ export const config = {
   /** HTTPS прямо в бэкенде (сертификат certbot, скопированный деплоем). Пусто — обычный HTTP. */
   tlsCertFile: env('TLS_CERT_FILE', ''),
   tlsKeyFile: env('TLS_KEY_FILE', ''),
+  /**
+   * Общий секрет с PHP-прокси на хостинге: если задан, бэкенд принимает запросы только
+   * с заголовком X-Colomba-Proxy (кроме /api/health) — в обход прокси к API не обратиться.
+   */
+  proxySecret: env('PROXY_SECRET', ''),
   maxUploadMb: Number(env('MAX_UPLOAD_MB', '8')),
   devLogCodes: bool(env('DEV_LOG_CODES', 'true')),
 };

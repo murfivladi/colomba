@@ -34,4 +34,4 @@ export function onlineCount(): number {
 
 setInterval(() => {
   for (const set of clients.values()) for (const res of set) res.write(': ping\n\n');
-}, 25_000).unref();
+}, 15_000).unref();
