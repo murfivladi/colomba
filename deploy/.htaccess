@@ -1,19 +1,17 @@
-# vladinc.ru/colomba/.htaccess — статика PWA на shared-хостинге,
-# /colomba/api/* проксируется на VPS (нужен mod_proxy + mod_proxy_http).
-# Если хостинг не разрешает mod_proxy — используйте поддомен api.vladinc.ru с CORS (см. README).
+# vladinc.ru/colomba/.htaccess — статика PWA на shared-хостинге.
+# API живёт отдельно: https://colomba-api.vladinc.ru:5576 (адрес вшивается при сборке).
 RewriteEngine On
 RewriteBase /colomba/
 
-# API → VPS. SSE (/api/me/stream) через такой прокси работает надёжнее WebSocket.
-RewriteRule ^api/(.*)$ https://VPS_HOST/api/$1 [P,L,QSA]
-
-# Service Worker и манифест не кэшировать надолго
-<FilesMatch "^(sw\.js|manifest\.webmanifest|index\.html)$">
-  Header set Cache-Control "no-cache"
-</FilesMatch>
-<FilesMatch "\.(js|css|woff2?|png|svg)$">
-  Header set Cache-Control "public, max-age=31536000, immutable"
-</FilesMatch>
+# Service Worker, манифест и index.html не кэшировать надолго — иначе обновления не дойдут
+<IfModule mod_headers.c>
+  <FilesMatch "^(sw\.js|manifest\.webmanifest|index\.html)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  <FilesMatch "\.(js|css|woff2?|png|svg)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
 AddType application/manifest+json .webmanifest
 
 # Хеш-роутинг: всё остальное — index.html

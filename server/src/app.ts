@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
@@ -16,15 +17,25 @@ import { worldRoutes } from './routes/world.js';
 import { adminRoutes } from './routes/admin.js';
 
 export async function buildApp(opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
+  // бэкенд на https://colomba-api.vladinc.ru:5576 сам терминирует TLS сертификатом Let's Encrypt
+  const https = config.tlsCertFile && config.tlsKeyFile
+    ? { https: { cert: fs.readFileSync(config.tlsCertFile), key: fs.readFileSync(config.tlsKeyFile) } }
+    : {};
   const app = Fastify({
     logger: opts.logger ?? true,
     trustProxy: true,
     bodyLimit: 2 * 1024 * 1024,
-  });
+    ...https,
+  }) as unknown as FastifyInstance;
   await app.register(cookie);
   if (config.corsOrigins.length) {
-    // запасной вариант без прокси: поддомен api.vladinc.ru с CORS
-    await app.register(cors, { origin: config.corsOrigins, credentials: true });
+    // фронт на vladinc.ru, API на colomba-api.vladinc.ru:5576 — один «сайт», cookie SameSite=Lax доходят
+    await app.register(cors, {
+      origin: config.corsOrigins,
+      credentials: true,
+      methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      maxAge: 86400,
+    });
   }
   if (config.rateLimit) await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   await app.register(multipart, { limits: { fileSize: config.maxUploadMb * 1024 * 1024, files: 1 } });

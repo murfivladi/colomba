@@ -52,12 +52,39 @@ npm run dev:web
 npm test
 ```
 
-## Развёртывание
+## Развёртывание (GitHub Actions)
 
-1. **VPS (Россия):** `cp .env.example .env`, заполнить секреты, затем `docker compose up -d --build`. API слушает `127.0.0.1:8080`; поставьте перед ним nginx/caddy с HTTPS.
-2. **Города для штемпелей:** `deploy/import-geonames.sh` (GeoNames cities15000 + названия RU/IT). Без импорта работает стартовый набор из ~170 городов.
-3. **Shared-хостинг:** `npm run build -w web`, содержимое `web/dist/` — в каталог `colomba/`, туда же `deploy/.htaccess` (замените `VPS_HOST`). Нужен `mod_proxy`; если его нет — поднимите `api.vladinc.ru` на VPS, задайте `CORS_ORIGINS=https://vladinc.ru` и соберите фронт с прокси на этот поддомен.
-4. Ключи ORS/GraphHopper, SMTP, VAPID — только в `.env` на VPS. В репозитории секретов нет.
+Схема: фронт (PWA) — на shared-хостинге `vladinc.ru/colomba` по FTP; бэкенд, MariaDB и файлы — в Docker на VPS. API доступно по адресу **https://colomba-api.vladinc.ru:5576**, HTTPS бэкенд обслуживает сам, сертификатом Let's Encrypt.
+
+Workflow `.github/workflows/deploy.yml` запускается при пуше в `main` или вручную (Actions → Deploy → Run workflow). Порядок шагов:
+1. Тесты и проверка типов.
+2. **Бэкенд.** Архив кода уходит на VPS по SCP, затем по SSH (с паролем) запускается `deploy/remote-deploy.sh`. Скрипт:
+   - при первом запуске ставит Docker и certbot;
+   - создаёт `/opt/colomba/.env` со случайными паролями базы; дальше пароли сохраняются, а остальные настройки обновляются из секретов;
+   - выпускает сертификат для `colomba-api.vladinc.ru` через `certbot --standalone`. **На время выдачи nginx останавливается и затем запускается обратно** (хуки `deploy/certbot-pre.sh` и `certbot-post.sh`). Если nginx не работал до этого, он не запускается. Хуки сохраняются в конфиге продления certbot, поэтому автопродление ведёт себя так же. Если сертификату ещё далеко до истечения, certbot ничего не делает и nginx не трогается;
+   - копирует сертификат бэкенду (`/opt/colomba/certs`, хук `certbot-deploy.sh`; после продления он же перезапускает контейнер `colomba-api`);
+   - выполняет `docker compose up -d --build` и ждёт, пока ответит `/api/health`.
+3. **Фронт.** Сборка с `VITE_API_URL=https://colomba-api.vladinc.ru:5576/api`, затем выгрузка `web/dist/` вместе с `.htaccess` по FTP.
+
+### Секреты репозитория
+| Секрет | Обязателен | Что это |
+|---|---|---|
+| `VPS_IP`, `VPS_USER` (`root`), `VPS_PASS` | да | SSH-доступ к VPS |
+| `FTP_HOST`, `FTP_USER`, `FTP_PASS` | да | FTP shared-хостинга |
+| `FTP_DIR` | нет | каталог приложения на FTP, по умолчанию `/colomba/` (например, `/public_html/colomba/`) |
+| `CERTBOT_EMAIL` | нет | почта для уведомлений Let's Encrypt |
+| `ORS_API_KEY`, `GRAPHHOPPER_API_KEY` | нет | маршруты по дорогам (без них — дуга ×1,3) |
+| `SMTP_URL`, `MAIL_FROM` | нет | письма с кодом входа |
+| `ADMIN_EMAILS` | нет | кто станет администратором при регистрации |
+
+### Что должно быть готово заранее
+- DNS: A-запись `colomba-api.vladinc.ru` указывает на IP VPS.
+- Порты 80 (только на время выдачи сертификата) и 5576 открыты. Если на VPS включён `ufw`, скрипт откроет их сам; облачный файрвол провайдера нужно настроить вручную.
+- Почтой и cookie управлять не нужно: `vladinc.ru` и `colomba-api.vladinc.ru` — один «сайт», cookie сессии (`Secure; SameSite=Lax`) доходит, CORS разрешён только для `https://vladinc.ru` и `https://www.vladinc.ru`.
+
+### Потом
+- Полная база городов для штемпелей: на VPS `cd /opt/colomba/app && docker compose -p colomba exec api ...` либо локально `deploy/import-geonames.sh` с доступом к базе. Без неё работает стартовый набор из ~170 городов.
+- Стать администратором можно так: указать свою почту в `ADMIN_EMAILS` до регистрации.
 
 ## Документы
 - [Черновики политики конфиденциальности и правил (RU/IT)](docs/legal/) — для проверки юристом.

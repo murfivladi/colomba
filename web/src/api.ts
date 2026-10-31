@@ -1,5 +1,8 @@
-/** Клиент API: браузер обращается только к vladinc.ru/colomba/api. */
-export const API_BASE = `${import.meta.env.BASE_URL}api`;
+/**
+ * Клиент API. В продакшне — https://colomba-api.vladinc.ru:5576/api (задаётся при сборке
+ * через VITE_API_URL); в разработке — /colomba/api через прокси Vite.
+ */
+export const API_BASE: string = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || `${import.meta.env.BASE_URL}api`;
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, public details?: any) {

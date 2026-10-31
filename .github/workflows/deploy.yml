@@ -1,0 +1,129 @@
+name: Deploy
+
+# Тесты → бэкенд на VPS (Docker, HTTPS прямо в бэкенде на :5576, сертификат certbot)
+# → фронт (PWA) на shared-хостинг по FTP.
+#
+# Секреты (Settings → Secrets and variables → Actions):
+#   VPS_IP, VPS_USER, VPS_PASS          — доступ к VPS по SSH (пароль)
+#   FTP_HOST, FTP_USER, FTP_PASS         — FTP shared-хостинга
+#   FTP_DIR        (необязательно)       — каталог сайта на FTP, по умолчанию /colomba/
+#   CERTBOT_EMAIL  (необязательно)       — почта для Let's Encrypt
+#   ORS_API_KEY, GRAPHHOPPER_API_KEY, SMTP_URL, MAIL_FROM, ADMIN_EMAILS (необязательно)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  API_DOMAIN: colomba-api.vladinc.ru
+  API_PORT: '5576'
+  PUBLIC_URL: https://vladinc.ru/colomba
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: colomba_test
+          MARIADB_USER: colomba
+          MARIADB_PASSWORD: colomba
+          MARIADB_ROOT_PASSWORD: root
+        ports: ['3306:3306']
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  backend:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pack release
+        run: |
+          mkdir -p release
+          git archive --format=tar.gz -o release/colomba-deploy.tar.gz HEAD
+          cp deploy/remote-deploy.sh release/
+
+      - name: Upload to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASS }}
+          source: release/colomba-deploy.tar.gz,release/remote-deploy.sh
+          target: /tmp/colomba-deploy
+          strip_components: 1
+
+      - name: Certificate + docker compose up
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DOMAIN: ${{ env.API_DOMAIN }}
+          API_PORT: ${{ env.API_PORT }}
+          PUBLIC_URL: ${{ env.PUBLIC_URL }}
+          CORS_ORIGINS: https://vladinc.ru,https://www.vladinc.ru
+          WEBAUTHN_RP_ID: vladinc.ru
+          INVITE_ONLY: 'true'
+          CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+          GRAPHHOPPER_API_KEY: ${{ secrets.GRAPHHOPPER_API_KEY }}
+          SMTP_URL: ${{ secrets.SMTP_URL }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASS }}
+          command_timeout: 30m
+          envs: DOMAIN,API_PORT,PUBLIC_URL,CORS_ORIGINS,WEBAUTHN_RP_ID,INVITE_ONLY,CERTBOT_EMAIL,ORS_API_KEY,GRAPHHOPPER_API_KEY,SMTP_URL,MAIL_FROM,ADMIN_EMAILS
+          script: BUNDLE=/tmp/colomba-deploy/colomba-deploy.tar.gz bash /tmp/colomba-deploy/remote-deploy.sh
+
+      - name: Check API from the internet
+        run: |
+          for i in $(seq 1 10); do
+            curl -fsS "https://${API_DOMAIN}:${API_PORT}/api/health" && exit 0
+            sleep 6
+          done
+          echo "API is not reachable at https://${API_DOMAIN}:${API_PORT}" >&2
+          exit 1
+
+  frontend:
+    needs: backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Build PWA
+        env:
+          VITE_API_URL: https://${{ env.API_DOMAIN }}:${{ env.API_PORT }}/api
+        run: |
+          npm run build -w web
+          cp deploy/.htaccess web/dist/.htaccess
+
+      - name: Upload by FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
+          local-dir: ./web/dist/
+          server-dir: ${{ secrets.FTP_DIR || '/colomba/' }}

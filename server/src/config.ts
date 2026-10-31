@@ -51,6 +51,9 @@ export const config = {
   /** Для тестов: отключить случайность. */
   deterministic: bool(env('DETERMINISTIC', 'false')),
   rateLimit: bool(env('RATE_LIMIT', 'true')),
+  /** HTTPS прямо в бэкенде (сертификат certbot, скопированный деплоем). Пусто — обычный HTTP. */
+  tlsCertFile: env('TLS_CERT_FILE', ''),
+  tlsKeyFile: env('TLS_KEY_FILE', ''),
   maxUploadMb: Number(env('MAX_UPLOAD_MB', '8')),
   devLogCodes: bool(env('DEV_LOG_CODES', 'true')),
 };
