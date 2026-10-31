@@ -107,6 +107,60 @@ certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos $EMAIL_
 DOMAIN=$DOMAIN "$APP_DIR/bin/certbot-deploy.sh" norestart
 restore_nginx
 
+# ── nginx на 443 для API ──
+# Shared-хостинги часто выпускают наружу только порты 80/443, и PHP-прокси не достучится до :5576.
+# Поэтому colomba-api.vladinc.ru:443 отдаём через nginx (он уже держит 443 для других проектов):
+# отдельный файл, проверка nginx -t, мягкий reload; при любой ошибке файл убирается.
+setup_nginx_vhost() {
+  command -v nginx >/dev/null || { log "nginx not installed — API only on :$API_PORT"; return 0; }
+  local dir=/etc/nginx/conf.d
+  [ -d "$dir" ] || { log "no $dir — skipping nginx vhost"; return 0; }
+  local conf="$dir/colomba-api.conf" new
+  new=$(mktemp)
+  cat > "$new" <<NGX
+# Colomba API (создаётся деплоем Colomba; другие проекты не затрагивает)
+server {
+    listen 443 ssl;
+    server_name $DOMAIN;
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    client_max_body_size 12m;
+
+    location / {
+        proxy_pass https://127.0.0.1:$API_PORT;
+        proxy_ssl_server_name on;
+        proxy_ssl_name $DOMAIN;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Connection "";
+        # поток уведомлений (SSE) — без буферизации и с долгим таймаутом
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+NGX
+  if [ -f "$conf" ] && cmp -s "$new" "$conf"; then rm -f "$new"; log "nginx vhost unchanged"; return 0; fi
+  local backup=""
+  [ -f "$conf" ] && { backup=$(mktemp); cp "$conf" "$backup"; }
+  install -m 644 "$new" "$conf"; rm -f "$new"
+  if nginx -t >/tmp/colomba-nginx-test.log 2>&1; then
+    if ! nginx -T 2>/dev/null | grep -q "server_name $DOMAIN;"; then
+      log "WARNING: nginx.conf does not include $dir — vhost not active"
+    fi
+    if systemctl is-active --quiet nginx 2>/dev/null; then systemctl reload nginx && log "nginx reloaded with $conf"; fi
+    rm -f "$backup"
+  else
+    log "WARNING: nginx -t failed, rolling back the Colomba vhost:"
+    cat /tmp/colomba-nginx-test.log
+    if [ -n "$backup" ]; then mv "$backup" "$conf"; else rm -f "$conf"; fi
+  fi
+}
+setup_nginx_vhost || true
+
 # ── запуск ──
 log "docker compose up"
 cd "$APP_DIR/app"
@@ -117,6 +171,11 @@ log "waiting for https://$DOMAIN:$API_PORT/api/health"
 for i in $(seq 1 30); do
   if curl -fsS --resolve "$DOMAIN:$API_PORT:127.0.0.1" "https://$DOMAIN:$API_PORT/api/health" >/dev/null 2>&1; then
     log "backend is up"
+    if curl -fsS --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/api/health" >/dev/null 2>&1; then
+      log "also via nginx: https://$DOMAIN/api/health"
+    else
+      log "WARNING: https://$DOMAIN (443 via nginx) does not answer — the PHP proxy will try :$API_PORT"
+    fi
     exit 0
   fi
   sleep 4

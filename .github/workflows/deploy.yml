@@ -134,8 +134,9 @@ jobs:
           # API — тот же адрес, что и сайт: /colomba/api (PHP-прокси)
           npm run build -w web
           cp deploy/.htaccess web/dist/.htaccess
-          # настройки прокси: адрес бэкенда и общий секрет (файл не попадает в репозиторий)
-          php -r '$c = ["backend" => "https://" . getenv("API_DOMAIN") . ":" . getenv("API_PORT"), "secret" => getenv("PROXY_SECRET")];
+          # настройки прокси: адреса бэкенда (сначала 443 через nginx — хостинги часто блокируют
+          # исходящие на нестандартные порты, затем :5576) и общий секрет (файла нет в репозитории)
+          php -r '$c = ["backends" => ["https://" . getenv("API_DOMAIN"), "https://" . getenv("API_DOMAIN") . ":" . getenv("API_PORT")], "secret" => getenv("PROXY_SECRET")];
                   file_put_contents("web/dist/api/config.php", "<?php\nreturn " . var_export($c, true) . ";\n");'
           php -l web/dist/api/config.php
           php -l web/dist/api/index.php
