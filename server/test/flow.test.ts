@@ -394,3 +394,17 @@ describe('runtime settings in admin', () => {
     expect(after.mailConfigured).toBe(false);
   });
 });
+
+describe('bodyless requests', () => {
+  it('DELETE with an empty form body (as some proxies send it) works', async () => {
+    const u = await register('blocker', PALERMO);
+    const v = await register('blocked1', MOSCOW);
+    await call(u, 'POST', '/blocks', { userId: v.id });
+    const r = await app.inject({
+      method: 'DELETE', url: `/api/blocks/${v.id}`,
+      headers: { cookie: u.cookie, 'content-type': 'application/x-www-form-urlencoded', 'content-length': '0' }, payload: '',
+    });
+    expect(r.statusCode, r.body).toBe(200);
+    expect((await call(u, 'GET', '/blocks')).body).toHaveLength(0);
+  });
+});

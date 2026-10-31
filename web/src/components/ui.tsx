@@ -12,10 +12,19 @@ export function Loading() {
 export function ErrorText({ error }: { error: unknown }) {
   const { t } = useT();
   if (!error) return null;
-  const code = error instanceof ApiError ? error.code : 'error';
+  const api = error instanceof ApiError ? error : null;
+  const code = api ? api.code : 'error';
   const key = `err.${code}`;
   const text = t(key);
-  return <p className="error" role="alert">{text === key ? `${t('common.error')} (${code})` : text}</p>;
+  const status = api && api.status ? ` · HTTP ${api.status}` : '';
+  const snippet = api?.details?.snippet ? ` — ${api.details.snippet}` : '';
+  if (!api && error instanceof Error) console.error(error);
+  return (
+    <p className="error" role="alert">
+      {text === key ? `${t('common.error')}: ${code}${status}` : text}
+      {(text === key || code === 'bad_response' || code === 'validation') && <small style={{ display: 'block', opacity: 0.8 }}>{code}{status}{snippet}</small>}
+    </p>
+  );
 }
 
 /** Загрузка данных с повтором по ключу. */

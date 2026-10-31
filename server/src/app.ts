@@ -43,6 +43,11 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   }
   if (config.rateLimit) await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   await app.register(multipart, { limits: { fileSize: config.maxUploadMb * 1024 * 1024, files: 1 } });
+  // прокси и браузеры иногда шлют пустое тело с типом формы — это не ошибка
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
+    const s = String(body ?? '');
+    done(null, s ? Object.fromEntries(new URLSearchParams(s)) : undefined);
+  });
 
   app.decorateRequest('user', null);
   const secret = config.proxySecret ? Buffer.from(config.proxySecret) : null;

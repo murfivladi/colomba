@@ -146,6 +146,7 @@ export function Settings() {
 
 function Blocked() {
   const { t } = useT();
+  const { toast } = useSession();
   const { data, reload } = useLoad(() => api<any[]>('/blocks'), []);
   if (!data?.length) return null;
   return (
@@ -154,7 +155,9 @@ function Blocked() {
       {data.map((u) => (
         <div key={u.id} className="row" style={{ marginBottom: 6 }}>
           <span className="grow"><UserName u={u} /></span>
-          <button className="small secondary" onClick={async () => { await api(`/blocks/${u.id}`, { method: 'DELETE' }); reload(); }}>{t('settings.unblock')}</button>
+          <button className="small secondary" onClick={async () => {
+            try { await api(`/blocks/${u.id}`, { method: 'DELETE' }); reload(); } catch (e: any) { toast(`${t('common.error')}: ${e?.code ?? e}`); }
+          }}>{t('settings.unblock')}</button>
         </div>
       ))}
     </div>

@@ -199,7 +199,9 @@ foreach ($backends as $backend) {
             return connection_aborted() ? 0 : strlen($chunk);
         },
     ]);
-    if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+    // пустое тело не передаём: иначе curl сам ставит Content-Type x-www-form-urlencoded,
+    // и бэкенд отвечает 415 на DELETE/POST без тела (разблокировать, удалить друга…)
+    if (is_array($body) || (is_string($body) && $body !== '')) curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
 
     $ok = curl_exec($ch);
     $errno = curl_errno($ch);
