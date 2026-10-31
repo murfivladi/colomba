@@ -3,7 +3,8 @@
 # затем перезапуск, чтобы он подхватил новый ключ. Без аргумента restart — только копирование.
 set -e
 DOMAIN=${DOMAIN:-colomba-api.vladinc.ru}
-LIVE=/etc/letsencrypt/live/$DOMAIN
+# при продлении certbot сам передаёт путь к сертификату в RENEWED_LINEAGE
+LIVE=${RENEWED_LINEAGE:-/etc/letsencrypt/live/$DOMAIN}
 DEST=/opt/colomba/certs
 mkdir -p "$DEST"
 cp -L "$LIVE/fullchain.pem" "$DEST/fullchain.pem"

@@ -100,7 +100,7 @@ certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos $EMAIL_
   --keep-until-expiring \
   --pre-hook "$APP_DIR/bin/certbot-pre.sh" \
   --post-hook "$APP_DIR/bin/certbot-post.sh" \
-  --deploy-hook "DOMAIN=$DOMAIN $APP_DIR/bin/certbot-deploy.sh"
+  --deploy-hook "$APP_DIR/bin/certbot-deploy.sh"
 # если сертификат уже был, хуки могли не запуститься — копируем его бэкенду в любом случае
 DOMAIN=$DOMAIN "$APP_DIR/bin/certbot-deploy.sh" norestart
 restore_nginx
