@@ -80,7 +80,7 @@ Workflow `.github/workflows/deploy.yml` запускается при пуше �
 ### Что должно быть готово заранее
 - DNS: A-запись `colomba-api.vladinc.ru` указывает на IP VPS.
 - Порты 80 (только на время выдачи сертификата) и 5576 открыты. Если на VPS включён `ufw`, скрипт откроет их сам; облачный файрвол провайдера нужно настроить вручную.
-- Почтой и cookie управлять не нужно: `vladinc.ru` и `colomba-api.vladinc.ru` — один «сайт», cookie сессии (`Secure; SameSite=Lax`) доходит, CORS разрешён только для `https://vladinc.ru` и `https://www.vladinc.ru`.
+- Для cookie ничего настраивать не нужно: `vladinc.ru` и `colomba-api.vladinc.ru` — один «сайт», cookie сессии (`Secure; SameSite=Lax`) доходит, CORS разрешён только для `https://vladinc.ru` и `https://www.vladinc.ru`.
 
 ### Потом
 - Полная база городов для штемпелей: на VPS `cd /opt/colomba/app && docker compose -p colomba exec api ...` либо локально `deploy/import-geonames.sh` с доступом к базе. Без неё работает стартовый набор из ~170 городов.
