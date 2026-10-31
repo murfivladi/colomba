@@ -1,0 +1,16 @@
+{
+  "name": "colomba",
+  "private": true,
+  "description": "Colomba — медленный веб-мессенджер с курьерами / il messenger lento con i corrieri",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": ["shared", "server", "web"],
+  "scripts": {
+    "build": "npm run build -w shared && npm run build -w server && npm run build -w web",
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "test": "npm run build -w shared && npm test -w server",
+    "typecheck": "npm run build -w shared && npm run typecheck -w server && npm run typecheck -w web"
+  },
+  "engines": { "node": ">=20" }
+}
